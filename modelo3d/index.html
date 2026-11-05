@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rou's Hair Studio · Modelo 3D v1</title>
+<style>
+  html,body{margin:0;height:100%;background:#0d0e12;color:#eee;font:14px/1.3 system-ui,Segoe UI,sans-serif;overflow:hidden}
+  canvas{display:block}
+  #ui{position:fixed;left:12px;top:12px;display:flex;flex-wrap:wrap;gap:6px;max-width:calc(100% - 24px)}
+  #ui button{background:#1c1e25cc;color:#eee;border:1px solid #3a3d48;border-radius:6px;padding:6px 10px;cursor:pointer}
+  #ui button.on{background:#e8e8e8;color:#111}
+  #info{position:fixed;left:12px;bottom:12px;font-size:12px;opacity:.7}
+  #dl{color:#9cf}
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="ui"></div>
+<div id="info">Arrastra para orbitar · rueda para zoom · botón derecho para desplazar · <a id="dl" href="rou_studio.glb" download>Descargar .glb</a></div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.9;
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x10131c);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.25;
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.05, 200);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+// luces: noche en la calle, interior iluminado
+scene.add(new THREE.HemisphereLight(0x8fa3c8, 0x2a2420, 0.25));
+const street = new THREE.PointLight(0xffd2a0, 4, 12, 2); street.position.set(3, 3.3, 1.2); scene.add(street);
+const interior = [
+  [1.5, 2.6, -1.5], [4.5, 2.6, -1.5], [2.0, 2.8, -6], [4.8, 2.8, -7], [2.5, 2.8, -10.5], [4.2, 2.8, -14.5], [1.5, 2.8, -13.5]
+];
+for (const [x, y, z] of interior) {
+  const l = new THREE.PointLight(0xfff6ee, 2.2, 8, 2); l.position.set(x, y, z); scene.add(l);
+}
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.35, 0.3, 0.92);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+let model;
+const hideInPlan = n => /^(Techo|LED_|Climatizacion|Edificio|Rotulo|Neon)/.test(n);
+new GLTFLoader().load('rou_studio.glb', g => {
+  model = g.scene;
+  model.traverse(o => { if (o.isMesh && /espejo|cromo/.test(o.material.name)) o.material.envMapIntensity = 4; });
+  scene.add(model);
+  setView(location.hash.slice(1) || 'fachada');
+  window.__ready = true;
+});
+
+// vistas (X=ancho, Y=altura, Z=-profundidad)
+const VIEWS = {
+  fachada:   { label: 'Fachada',            pos: [3.2, 1.55, 8.5],  tgt: [3.0, 1.7, 0] },
+  diagonal:  { label: 'Fachada diagonal',   pos: [-3.2, 1.7, 6.0],  tgt: [3.2, 1.6, -1.0] },
+  entrada:   { label: 'Entrada → fondo',    pos: [3.3, 1.65, -0.9],  tgt: [3.0, 1.2, -15] },
+  fondo:     { label: 'Fondo → entrada',    pos: [3.2, 1.6, -15.3], tgt: [3.0, 1.2, 0] },
+  barberia:  { label: 'Zona barbería',      pos: [5.2, 1.7, -6.2],  tgt: [0.6, 1.2, -1.8] },
+  espejos:   { label: 'Baldas y espejos',   pos: [1.6, 1.6, -3.8],  tgt: [6.4, 1.2, -8.5] },
+  tocador:   { label: 'Tocador mostaza',    pos: [5.5, 1.7, -12.5], tgt: [0.4, 1.0, -7.5] },
+  lavado:    { label: 'Lavacabezas',        pos: [2.2, 1.7, -10.8], tgt: [4.2, 1.0, -16] },
+  planta:    { label: 'Planta (sin techo)', pos: [3.25, 21, -7.0],  tgt: [3.25, 0, -7.1], plan: true },
+  axo:       { label: 'Axonometría',        pos: [13, 12, 3],       tgt: [3.25, 0.5, -7.5], plan: true },
+};
+const ui = document.getElementById('ui');
+for (const [k, v] of Object.entries(VIEWS)) {
+  const b = document.createElement('button'); b.textContent = v.label; b.dataset.k = k;
+  b.onclick = () => setView(k); ui.appendChild(b);
+}
+const sv = document.createElement('button'); sv.textContent = '📷 Guardar render'; sv.onclick = () => saveRender(); ui.appendChild(sv);
+
+let current = 'fachada';
+function setView(k) {
+  const v = VIEWS[k] || VIEWS.fachada; current = k in VIEWS ? k : 'fachada';
+  camera.position.set(...v.pos); controls.target.set(...v.tgt); controls.update();
+  camera.fov = k === 'planta' ? 45 : 60; camera.updateProjectionMatrix();
+  if (model) model.traverse(o => { if (o.name && hideInPlan(o.name)) o.visible = !v.plan; });
+  scene.background.set(v.plan ? 0xf2f2f2 : 0x10131c);
+  for (const b of ui.querySelectorAll('button[data-k]')) b.classList.toggle('on', b.dataset.k === current);
+  history.replaceState(null, '', '#' + current);
+}
+window.setView = setView;
+
+async function saveRender(name, w = 1920, h = 1080) {
+  const [ow, oh] = [innerWidth, innerHeight];
+  renderer.setPixelRatio(1); renderer.setSize(w, h, false); composer.setSize(w, h);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+  composer.render();
+  const url = renderer.domElement.toDataURL('image/png');
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setSize(ow, oh); composer.setSize(ow, oh);
+  camera.aspect = ow / oh; camera.updateProjectionMatrix();
+  await fetch('/save?name=' + (name || current), { method: 'POST', body: url });
+  return 'saved ' + (name || current);
+}
+window.saveRender = saveRender;
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight);
+});
+renderer.setAnimationLoop(() => { controls.update(); composer.render(); });
+</script>
+</body>
+</html>
